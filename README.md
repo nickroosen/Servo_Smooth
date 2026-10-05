@@ -61,7 +61,7 @@ changes of direction ease in and out instead of snapping.
 
 | Setting | What it does |
 | --- | --- |
-| `SERVO_TRAVEL_DEG` | 180 or 270, matching the version on your servo's label. |
+| `SERVO_TRAVEL_DEG` | 180 or 270, matching the version on your servo's label (set to 270). |
 | `SERVO_CFG` | Per servo: pin, min/max angle (degrees from centre), rest angle, reverse. The default is ±45°. Widen it a few degrees at a time while watching the spine. |
 | `FILTER` | Smoothing, from 0.01 (lazy) to 1.0 (none). |
 | `MAX_SPEED_DEG_PER_S` | Top speed (default 180°/s; the servo can do about 350°/s). Lower it if the rig shakes itself apart. |

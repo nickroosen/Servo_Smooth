@@ -25,7 +25,7 @@
 // Servo type. The DS3240MG maps 500..2500 us onto its full travel, which
 // is 180 or 270 degrees depending on the version you bought (it's on the
 // label). Getting this wrong makes every angle below 1.5x too big or small.
-const float SERVO_TRAVEL_DEG = 180;
+const float SERVO_TRAVEL_DEG = 270;
 const int PULSE_MIN_US = 500;
 const int PULSE_MAX_US = 2500;
 
