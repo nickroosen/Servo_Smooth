@@ -12,48 +12,119 @@ wriggles. A motion sensor wakes it up and it plays a sound effect.
 
 ## Parts
 
-- [Adafruit RP2040 Prop-Maker Feather](https://www.adafruit.com/product/5768). It replaces the Uno, Motor Shield and Audio FX board.
-- 2 × DS3240MG servos, **270° version**
-- PIR motion sensor (e.g. Adafruit #189 or an HC-SR501)
-- One 4 Ω or 8 Ω speaker, up to 3 W
-- 6 V UBEC or regulated supply, **8 A or more**, for the servos
-- 1000 µF (10 V or more) electrolytic capacitor
-- Power for the Feather: 5 V over USB-C, or a 3.7 V LiPo (see the notes on volume and the PIR below)
+### Electronics
+
+| Part | Notes |
+| --- | --- |
+| [Adafruit RP2040 Prop-Maker Feather](https://www.adafruit.com/product/5768) | Replaces the Uno, Motor Shield and Audio FX board. |
+| 2 × DS3240MG servos, **270° version** | |
+| PIR motion sensor | Adafruit #189 or an HC-SR501. Needs 5 V. |
+| 1 × speaker, 4 Ω or 8 Ω, up to 3 W | Mono amp, one speaker only. |
+| 6 V UBEC, **8 A continuous** | e.g. the Henge/FEICHAO 8A UBEC: 7–25.5 V in, jumper set to **6.0 V**. |
+| Power source | USB-C (option A) or a battery (option B), see [Power](#power). |
+| 1000 µF electrolytic capacitor, 10 V or more | Across the UBEC output, near the servos. |
+| 470 µF electrolytic capacitor, **35 V** or more | Across the UBEC input. Absorbs servo current spikes so the supply doesn't cut out. |
+| Inline fuse holder + **5 A** fuse | On the positive wire into the UBEC. Cheap insurance inside a foam-filled bag. |
+| Small terminal block, Wago lever nuts or a servo power board | To split the 6 V supply to both servos. |
+| 2 × servo extension leads | If the servos sit further from the Feather than their leads reach. |
+| 18 AWG wire (red/black) | For everything carrying servo current. |
+| 74AHCT125 level shifter (optional) | Only if the servos jitter on the 3.3 V signals. Cheap enough to order now. |
+
+### Tools
+
+- Multimeter, to check every supply voltage **before** connecting the servos or the Feather.
+- Soldering iron, for the capacitors, the trigger-board voltage jumper and the PIR header.
+
+## Power
+
+The servos and the Feather get **separate** supplies. Servo current spikes
+would reset the Feather, and the UBEC's 6 V is too much for the Feather's
+USB input. The grounds are joined.
+
+### Option A: USB-C wall power (recommended for a fixed display)
+
+```
+65 W+ USB-C PD charger
+        │  USB-C cable rated 60 W+ (100 W / 5 A preferred)
+        ▼
+USB-C PD trigger board, set to 20 V ──► 5 A fuse ──┬──► 6 V UBEC ──► servos
+                                                   │   (470 µF on input,
+                                                   │    1000 µF on output)
+                                                   │
+                                                   └──► 5 V buck ──► Feather USB pin + GND
+```
+
+- **Charger**: 65 W or more, with **20 V at 3.25 A or more** in its specs (most
+  laptop chargers do). At full stall the two servos pull about 50 W.
+  Most chargers only supply 3 A (36 W) at 12 V, which isn't enough, so use 20 V.
+- **PD trigger board**: rated 3 A or more and set to **20 V**. Most use a solder
+  jumper, a button or a fixed version. Check the output with a multimeter before
+  connecting anything; it must stay under the UBEC's 25.5 V input limit.
+- **Feather supply**: a small 5 V buck converter (1–2 A, input rated 24 V or more)
+  from the same 20 V line, wired to the Feather's **USB** pin and **GND**. One
+  charger and one cable power everything.
+  - **Don't plug the Feather into a computer while the buck is connected.**
+    The buck's 5 V would push back into the computer's USB port. Disconnect the
+    buck's red wire to edit code. Alternatively, power the Feather over its own USB-C
+    cable from a second charger port and skip the buck. Note that multi-port
+    chargers usually split their power, so the PD port may no longer deliver
+    65 W with both ports in use.
+- A **USB-C power bank** with 20 V PD output (labelled 65 W or more) can replace
+  the charger. Some power banks switch off when the draw is very low, and the
+  Feather alone may not draw enough between fits to keep it on.
+
+### Option B: battery
+
+```
+2S–6S LiPo ──► 5 A fuse ──┬──► 6 V UBEC ──► servos
+                           └──► 5 V UBEC/buck ──► Feather USB pin + GND
+```
+
+Same rules as option A: 470 µF on the UBEC input, 1000 µF on its output, and
+don't connect a computer while the 5 V converter is connected.
+
+### Power checks before first connection
+
+1. Measure the trigger board or battery output: 20 V, or the pack voltage.
+2. Measure the UBEC output with nothing attached: **6.0 V** (not 7.4 V).
+3. Measure the 5 V converter output: 4.9–5.2 V.
+4. Only then connect the Feather, then the servos.
 
 ## Wiring
 
 ```
-                 6 V / 8 A UBEC
-                 +           -
-                 |           |
-     +-----------+-----+     |      (1000 uF cap across + and -, near the servos)
-     |                 |     |
-  Servo 1 V+      Servo 2 V+ |
-  Servo 1 GND ----Servo 2 GND+----------------- Feather GND   <- common ground!
-  Servo 1 SIG ------------------------------- Feather D9
-  Servo 2 SIG ------------------------------- Feather D10
+  6 V UBEC +  ──┬── Servo 1 V+
+                └── Servo 2 V+          (1000 uF cap across UBEC + and -)
+  6 V UBEC -  ──┬── Servo 1 GND
+                ├── Servo 2 GND
+                └── Feather GND         <- common ground!
 
-  PIR VCC --- terminal "5V"
-  PIR GND --- terminal "G"
-  PIR OUT --- terminal "Btn"
+  Servo 1 SIG ───── Feather D9
+  Servo 2 SIG ───── Feather D10
 
-  Speaker + / - --- terminals "+" / "-"
+  5 V converter + ── Feather USB pin
+  5 V converter - ── Feather GND
+
+  PIR VCC ── terminal "5V"
+  PIR GND ── terminal "G"
+  PIR OUT ── terminal "Btn"
+
+  Speaker + / - ── terminals "+" / "-"
 ```
 
 - **Don't power the DS3240MGs from the Feather's servo header.** Its V+ comes
-  from USB/LiPo through a small switch and can't supply 3–4 A per servo. Only
-  the signal wires go to the Feather.
-- **Don't connect a 2S LiPo (7.4–8.4 V) to the servos directly.** It's above
-  their 6.8 V maximum, so use a 6 V UBEC. Use 18 AWG or heavier wire for servo power.
+  from the Feather's own supply through a small switch and can't supply 3–4 A
+  per servo. Only the signal wires go to the Feather.
+- **Never connect the servos to more than 6.8 V.** Check that the UBEC jumper is
+  on 6.0 V, and never connect a 2S LiPo or the 20 V line to them directly.
 - The servo signals are 3.3 V. Most digital servos accept that. If they
-  jitter, add a 74AHCT125 level shifter.
+  jitter, add the 74AHCT125 level shifter (powered from 5 V).
 - **One speaker only.** The amp is mono and needs 4–8 Ω. Never wire two 4 Ω
   speakers in parallel (2 Ω).
 - The terminal-block 5V output, the amp and the servo header only get power
   once the code sets `EXTERNAL_POWER` high, which `code.py` does at start-up.
-  That 5V output comes from USB or the LiPo. On a LiPo it is only about 3.7 V,
-  which is too low for an HC-SR501 (it needs 4.5 V or more), and the amp is
-  quieter. Power the Feather from 5 V for best results.
+  That 5V output comes from the Feather's own 5 V (USB pin) supply, which is why
+  the PIR and the amp work best with the Feather on 5 V rather than a LiPo.
 
 ### PIR settings
 
