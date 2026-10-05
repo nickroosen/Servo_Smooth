@@ -12,7 +12,8 @@
 //     resting, to avoid brown-outs and buzzing/heating.
 //
 // Hardware: Arduino Uno, Adafruit Motor Shield V2 (servo headers are
-// D9/D10), optional Adafruit Audio FX board, optional sensor on A2.
+// D9/D10), 2 x DS3240MG servos on their own 6 V supply, optional Adafruit
+// Audio FX board, optional sensor on A2.
 // No extra libraries needed (Metro is no longer used).
 
 #include <Servo.h>
@@ -21,27 +22,36 @@
 // Configuration
 // ---------------------------------------------------------------------------
 
-// Servos. Pulse widths are in microseconds. Start with a narrow range and
-// widen it slowly - a high-torque servo will happily snap a cable or crack
-// a spine disk if it is told to go past the mechanism's limits.
+// Servo type. The DS3240MG maps 500..2500 us onto its full travel, which
+// is 180 or 270 degrees depending on the version you bought (it's on the
+// label). Getting this wrong makes every angle below 1.5x too big or small.
+const float SERVO_TRAVEL_DEG = 180;
+const int PULSE_MIN_US = 500;
+const int PULSE_MAX_US = 2500;
+
+// Angles are in degrees from the servo's centre (1500 us). The DS3240MG has
+// roughly 10x the torque of the original S3004s, enough to snap the wire
+// rope or crack a spine disk, so start narrow and widen a few degrees at a
+// time while watching the spine. (The original 800..2200 us range would be
+// about +/-63 deg on the 180 deg version, +/-95 deg on the 270.)
 struct ServoConfig {
   uint8_t pin;
-  int minUs;      // furthest safe pulse in one direction
-  int maxUs;      // furthest safe pulse in the other direction
-  int restUs;     // pulse where the spine hangs straight/relaxed
+  float minDeg;   // furthest safe angle one way (negative)
+  float maxDeg;   // furthest safe angle the other way (positive)
+  float restDeg;  // angle where the spine hangs straight/relaxed
   bool reversed;  // flip if this side moves the wrong way
 };
 
 const uint8_t NUM_SERVOS = 2;
 ServoConfig SERVO_CFG[NUM_SERVOS] = {
-  // pin, minUs, maxUs, restUs, reversed
-  {  9,   800,  2200,  1500,   false },  // "right" in the original sketch
-  { 10,   800,  2200,  1500,   false },  // "left"
+  // pin, minDeg, maxDeg, restDeg, reversed
+  {  9,    -45,    45,     0,     false },  // "right" in the original sketch
+  { 10,    -45,    45,     0,     false },  // "left"
 };
 
 // Motion feel
-const float FILTER = 0.10;           // 0.01 (lazy) .. 1.0 (no smoothing); was "filtro"
-const float MAX_SPEED_US_PER_S = 2500; // hard speed cap; lower = gentler on the rig
+const float FILTER = 0.10;              // 0.01 (lazy) .. 1.0 (no smoothing); was "filtro"
+const float MAX_SPEED_DEG_PER_S = 180;  // hard speed cap; the servo can do ~350
 const unsigned long UPDATE_MS = 20;  // servo refresh period (50 Hz)
 const float MIN_AMPLITUDE = 0.35;    // each new target is at least this far from rest (0..1)
 
@@ -83,19 +93,32 @@ struct Axis {
 
 Axis axes[NUM_SERVOS];
 
+const float US_PER_DEG = (PULSE_MAX_US - PULSE_MIN_US) / SERVO_TRAVEL_DEG;
+const float CENTER_US = (PULSE_MIN_US + PULSE_MAX_US) / 2.0;
+
+float degToUs(float deg) {
+  return CENTER_US + deg * US_PER_DEG;
+}
+
+float restUs(uint8_t i) {
+  return degToUs(SERVO_CFG[i].restDeg);
+}
+
 int clampUs(uint8_t i, float us) {
   const ServoConfig &c = SERVO_CFG[i];
-  int lo = min(c.minUs, c.maxUs);
-  int hi = max(c.minUs, c.maxUs);
-  return constrain((int)(us + 0.5), lo, hi);
+  float lo = degToUs(min(c.minDeg, c.maxDeg));
+  float hi = degToUs(max(c.minDeg, c.maxDeg));
+  lo = max(lo, (float)PULSE_MIN_US);
+  hi = min(hi, (float)PULSE_MAX_US);
+  return (int)(constrain(us, lo, hi) + 0.5);
 }
 
 // Convert a bend in -1..+1 (0 = rest) to a pulse width for servo i.
 float bendToUs(uint8_t i, float bend) {
   const ServoConfig &c = SERVO_CFG[i];
   if (c.reversed) bend = -bend;
-  if (bend >= 0) return c.restUs + bend * (c.maxUs - c.restUs);
-  return c.restUs + bend * (c.restUs - c.minUs);
+  if (bend >= 0) return degToUs(c.restDeg + bend * (c.maxDeg - c.restDeg));
+  return degToUs(c.restDeg + bend * (c.restDeg - c.minDeg));
 }
 
 void attachAxis(uint8_t i) {
@@ -103,7 +126,7 @@ void attachAxis(uint8_t i) {
   // Setting the pulse before attach() makes the first pulse go to the
   // current position rather than the library default of 1500 us.
   axes[i].servo.writeMicroseconds(clampUs(i, axes[i].pos));
-  axes[i].servo.attach(SERVO_CFG[i].pin, 500, 2500);
+  axes[i].servo.attach(SERVO_CFG[i].pin, PULSE_MIN_US, PULSE_MAX_US);
   axes[i].attached = true;
 }
 
@@ -122,7 +145,7 @@ void updateAxis(uint8_t i, float dtS) {
   Axis &a = axes[i];
   a.filtered += (a.target - a.filtered) * FILTER;
   float step = (a.filtered - a.pos) * FILTER * 2;  // second, quicker stage
-  float maxStep = MAX_SPEED_US_PER_S * dtS;
+  float maxStep = MAX_SPEED_DEG_PER_S * US_PER_DEG * dtS;
   a.pos += constrain(step, -maxStep, maxStep);
   if (a.attached) a.servo.writeMicroseconds(clampUs(i, a.pos));
 }
@@ -185,7 +208,7 @@ void enterState(State s, unsigned long now, unsigned long lengthMs) {
 }
 
 void goToRest() {
-  for (uint8_t i = 0; i < NUM_SERVOS; i++) setTarget(i, SERVO_CFG[i].restUs);
+  for (uint8_t i = 0; i < NUM_SERVOS; i++) setTarget(i, restUs(i));
 }
 
 void startFit(unsigned long now) {
@@ -270,7 +293,7 @@ void setup() {
   // rest once. Attach them one at a time so two high-torque servos don't
   // draw their stall current at the same moment and reset the board.
   for (uint8_t i = 0; i < NUM_SERVOS; i++) {
-    axes[i].target = axes[i].filtered = axes[i].pos = SERVO_CFG[i].restUs;
+    axes[i].target = axes[i].filtered = axes[i].pos = restUs(i);
     attachAxis(i);
     delay(400);
   }

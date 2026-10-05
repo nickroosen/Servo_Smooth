@@ -10,24 +10,41 @@ wriggles, with an optional sound effect and trigger sensor.
 ## Hardware
 
 - Arduino Uno with the Adafruit Motor Shield V2 (servo headers = D9, D10)
-- 2 × servos (originally Futaba S3004)
+- 2 × DS3240MG servos (originally Futaba S3004)
 - Adafruit Audio FX board, trigger input on D13 (pulled LOW to play) – optional
 - Analog sensor on A2. The bag runs while the reading is between 200 and 400 – optional
 
 No extra libraries are needed. The Metro library from the original is no longer used.
 
-### Powering high-torque servos
+### Powering the DS3240MG servos
+
+Specs for this servo family: 5–6.8 V, stall current of about 3.1 A at 5 V and
+3.9 A at 6.8 V, and 500–2500 µs pulses for full travel.
 
 The Motor Shield V2 servo headers take 5 V from the Arduino's regulator, which
-can't supply high-torque servos. When the regulator sags, the Uno resets or
-the servos jitter. Instead:
+can't supply these servos. When the regulator sags, the Uno resets or the
+servos jitter. Instead:
 
-1. Power the servos from their own supply (5–7.4 V, depending on the servo's
-   rating). Allow about 3 A per servo for stall current.
+1. Power the servos from their own **6 V supply rated for 8 A or more**: a
+   regulated supply, or a 6 V UBEC from a battery. **Don't connect a 2S LiPo
+   (7.4–8.4 V) directly.** It's above the 6.8 V maximum.
 2. Connect only the servo **signal** wires to D9/D10. Connect the supply ground
    to the Arduino's GND (a common ground is required).
-3. Put a large electrolytic capacitor (1000 µF or more, rated above the supply
-   voltage) across the servo supply close to the servos.
+3. Put a large electrolytic capacitor (1000 µF or more, rated 10 V or more)
+   across the servo supply close to the servos.
+4. Use 18 AWG or heavier wire for the servo power. The thin servo leads are fine.
+
+### Mechanical notes
+
+The DS3240MG is roughly 10× as strong as the S3004, so the spine and cables
+take far more load:
+
+- Crimp the ferrules properly, and print the pulleys and spine disks in PETG or
+  with more walls/infill.
+- Set the travel limits so the servo stops before the cable is fully taut.
+  Otherwise the servo stalls against the rig, draws about 3–4 A and heats up.
+- Make sure the servo mount is bolted down solidly; the servo now has the
+  torque to twist the mount loose.
 
 ## Behaviour
 
@@ -44,9 +61,10 @@ changes of direction ease in and out instead of snapping.
 
 | Setting | What it does |
 | --- | --- |
-| `SERVO_CFG` | Per servo: pin, min/max pulse (µs), rest pulse, reverse. **Narrow these first** with new servos, then widen them carefully. A strong servo can snap a cable or crack a disk. |
+| `SERVO_TRAVEL_DEG` | 180 or 270, matching the version on your servo's label. |
+| `SERVO_CFG` | Per servo: pin, min/max angle (degrees from centre), rest angle, reverse. The default is ±45°. Widen it a few degrees at a time while watching the spine. |
 | `FILTER` | Smoothing, from 0.01 (lazy) to 1.0 (none). |
-| `MAX_SPEED_US_PER_S` | Top speed. Lower it if the rig shakes itself apart. |
+| `MAX_SPEED_DEG_PER_S` | Top speed (default 180°/s; the servo can do about 350°/s). Lower it if the rig shakes itself apart. |
 | `MIN_AMPLITUDE` | Minimum bend for each move (0–1), so moves aren't tiny twitches. |
 | `NEW_TARGET_*`, `FIT_*`, `REST_*` | Timing ranges in ms. |
 | `USE_SENSOR`, `SENSOR_*` | Trigger window. Set `USE_SENSOR = false` to run continuously. |
