@@ -22,8 +22,9 @@ wriggles. A motion sensor wakes it up and it plays a sound effect.
 | 1 × speaker, 4 Ω or 8 Ω, up to 3 W | Mono amp, one speaker only. |
 | 6 V UBEC, **8 A continuous** | e.g. the Henge/FEICHAO 8A UBEC: 7–25.5 V in, jumper set to **6.0 V**. |
 | Power source | USB-C (option A) or a battery (option B), see [Power](#power). |
-| 1000 µF electrolytic capacitor, 10 V or more | Across the UBEC output, near the servos. |
-| 470 µF electrolytic capacitor, **35 V** or more | Across the UBEC input. Absorbs servo current spikes so the supply doesn't cut out. |
+| C1: 470 µF electrolytic capacitor, **35 V** or more | Across the UBEC input. Absorbs servo current spikes so the supply doesn't cut out. |
+| C2: 1000 µF electrolytic capacitor, 10 V or more | Across the UBEC output, near the servos. |
+| C3: 220 µF electrolytic capacitor, 10 V or more | Across the 5 V buck output, at the Feather's USB pin and GND. Smooths dips when the amp plays loud sounds. |
 | Inline fuse holder + **5 A** fuse | On the positive wire into the UBEC. Cheap insurance inside a foam-filled bag. |
 | Small terminal block, Wago lever nuts or a servo power board | To split the 6 V supply to both servos. |
 | 2 × servo extension leads | If the servos sit further from the Feather than their leads reach. |
@@ -48,10 +49,11 @@ USB input. The grounds are joined.
         │  USB-C cable rated 60 W+ (100 W / 5 A preferred)
         ▼
 USB-C PD trigger board, set to 20 V ──► 5 A fuse ──┬──► 6 V UBEC ──► servos
-                                                   │   (470 µF on input,
-                                                   │    1000 µF on output)
+                                                   │   (C1 470 µF on input,
+                                                   │    C2 1000 µF on output)
                                                    │
                                                    └──► 5 V buck ──► Feather USB pin + GND
+                                                        (C3 220 µF on output)
 ```
 
 - **Charger**: 65 W or more, with **20 V at 3.25 A or more** in its specs (most
@@ -77,11 +79,12 @@ USB-C PD trigger board, set to 20 V ──► 5 A fuse ──┬──► 6 V UB
 
 ```
 2S–6S LiPo ──► 5 A fuse ──┬──► 6 V UBEC ──► servos
-                           └──► 5 V UBEC/buck ──► Feather USB pin + GND
+                           └──► 5 V UBEC/buck ──► Feather USB pin + GND (C3 220 µF)
 ```
 
-Same rules as option A: 470 µF on the UBEC input, 1000 µF on its output, and
-don't connect a computer while the 5 V converter is connected.
+Same rules as option A: C1 470 µF on the UBEC input, C2 1000 µF on its output,
+C3 220 µF on the 5 V output, and don't connect a computer while the 5 V
+converter is connected.
 
 ### Power checks before first connection
 
@@ -92,9 +95,11 @@ don't connect a computer while the 5 V converter is connected.
 
 ## Wiring
 
+![Wiring schematic](docs/schematic.svg)
+
 ```
   6 V UBEC +  ──┬── Servo 1 V+
-                └── Servo 2 V+          (1000 uF cap across UBEC + and -)
+                └── Servo 2 V+          (C2 1000 uF across UBEC out + and -)
   6 V UBEC -  ──┬── Servo 1 GND
                 ├── Servo 2 GND
                 └── Feather GND         <- common ground!
@@ -102,8 +107,8 @@ don't connect a computer while the 5 V converter is connected.
   Servo 1 SIG ───── Feather D9
   Servo 2 SIG ───── Feather D10
 
-  5 V converter + ── Feather USB pin
-  5 V converter - ── Feather GND
+  5 V converter + ── Feather USB pin    (C3 220 uF across + and -,
+  5 V converter - ── Feather GND         at the Feather)
 
   PIR VCC ── terminal "5V"
   PIR GND ── terminal "G"
