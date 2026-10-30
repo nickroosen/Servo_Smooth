@@ -139,6 +139,27 @@ converter is connected.
   `PIR_WARMUP_S`, and the Feather's red LED mirrors the PIR output so you can
   aim it.
 
+### Outdoors: false triggers
+
+A PIR reacts to any change in infrared heat, so sun on the lens, passing
+clouds, moving shadows and plants blowing in the wind can all look like a person.
+
+- **Shade the sensor** with a hood or short tube, and aim it **down at the
+  path** people use, away from the sky and sunlit walls, bushes and pavement.
+  Cover the sides of the dome with tape to narrow its view, and turn the
+  sensitivity knob down if needed. Mount it so it can't wobble.
+- **The code also filters triggers.** A trigger is the PIR output going high,
+  plus one more for every `PIR_SUSTAIN_S` (4 s) it stays high. A fit only
+  starts after `PIR_TRIGGERS_NEEDED` (2) triggers within `PIR_TRIGGER_WINDOW_S`
+  (8 s). A single blip is ignored, while a person who keeps moving gets through
+  after about 4 s, or sooner if the PIR fires twice.
+- **Tuning:** the console prints every `PIR pulse 3.0 s` and `PIR trigger 1 of 2`.
+  Set `PIR_SUSTAIN_S` a little above the length of the false pulses you see.
+  The shorter it is, the faster the bag reacts to real people. Set
+  `PIR_TRIGGERS_NEEDED = 1` to turn the filter off.
+- **Cooldown:** once the bag has settled after a scare, the PIR is ignored for
+  `COOLDOWN_S` (20 s).
+
 ### Mechanical notes
 
 The DS3240MG is roughly 10× as strong as the S3004, so the spine and cables
@@ -174,6 +195,15 @@ ffmpeg -i scream.mp3 -ac 1 -ar 22050 -sample_fmt s16 scream.wav
 At this format each second of sound is about 44 KB, so the drive holds a
 couple of minutes of audio in total.
 
+### Louder sound
+
+- Compress and normalise the files: in Audacity, use Effect → Compressor, then
+  Effect → Normalize (−1 dB). Or add `-af "acompressor=threshold=-20dB:ratio=4,loudnorm"`
+  to the ffmpeg command.
+- Put the speaker in a small sealed box or tube, facing out, not buried in foam.
+- The amp's gain pads on the back of the Feather (default 9 dB, bridge to 12
+  for +3 dB) only help a little, so skip them if the board is already mounted.
+
 ## Behaviour
 
 1. **Power-up**: the servos are enabled one at a time and centred, then switch
@@ -182,7 +212,11 @@ couple of minutes of audio in total.
    new random positions every 50–500 ms for 2.5–7 s, or until the sound ends.
 3. **Rest**: the spine eases back to straight and the servos switch off (no buzzing or
    heating). After a random 2–10 s, if there has been motion in the last 10 s,
-   another fit starts. Otherwise it waits for the next motion.
+   another fit starts. Otherwise it waits for the next motion, after a 20 s
+   cooldown.
+
+"Motion" means motion that has passed the false-trigger filter (see
+[Outdoors: false triggers](#outdoors-false-triggers)).
 
 Motion goes through a two-stage low-pass filter with a hard speed cap, so
 changes of direction ease in and out instead of snapping.
@@ -207,7 +241,9 @@ All settings are at the top of `code.py`. Saving the file restarts it.
 | `NEW_TARGET_*`, `FIT_*`, `REST_*` | Timing ranges in seconds. |
 | `FIT_WAITS_FOR_SOUND` | Keep wriggling until the sound finishes. |
 | `PIR_WARMUP_S`, `PIR_HOLD_S` | PIR settle time, and how long motion keeps the bag active. |
-| `VOLUME` | 0.0–1.0. For more, solder the amp's 12 dB gain jumper on the back. |
+| `PIR_TRIGGERS_NEEDED`, `PIR_TRIGGER_WINDOW_S`, `PIR_SUSTAIN_S` | False-trigger filter. `PIR_TRIGGERS_NEEDED = 1` turns it off. |
+| `COOLDOWN_S` | How long the PIR is ignored after the bag settles. |
+| `VOLUME` | 0.0–1.0 (default 1.0). For more, see [Louder sound](#louder-sound). |
 | `DEBUG` | Prints state changes to the serial console. |
 
 ## Fixes compared with the 2015 sketch

@@ -64,6 +64,17 @@ PIR_PIN = board.EXTERNAL_BUTTON  # the "Btn" screw terminal
 PIR_WARMUP_S = 45          # PIR output is unreliable for ~30-60 s after power-up
 PIR_HOLD_S = 10            # keep going for this long after the last motion
 
+# False-trigger filtering (sunlight, shadows, wind). A "trigger" is the PIR
+# output going high, plus one more for every PIR_SUSTAIN_S it stays high.
+# Motion only counts once PIR_TRIGGERS_NEEDED triggers land within
+# PIR_TRIGGER_WINDOW_S, so a single short blip is ignored but a person who
+# keeps moving gets through. Set PIR_SUSTAIN_S just above the shortest pulse
+# your PIR gives (the console prints each pulse length). 1 = no filtering.
+PIR_TRIGGERS_NEEDED = 2
+PIR_TRIGGER_WINDOW_S = 8
+PIR_SUSTAIN_S = 4
+COOLDOWN_S = 20            # after the bag settles, ignore the PIR this long
+
 # Sound. WAVs must be mono, 16-bit, at SAMPLE_RATE (see README.md).
 SOUND_DIR = "/sounds"
 SAMPLE_RATE = 22050
@@ -263,11 +274,55 @@ pir.switch_to_input(pull=digitalio.Pull.DOWN)  # reads "no motion" if unplugged
 led = digitalio.DigitalInOut(board.LED)  # mirrors the PIR, handy for aiming it
 led.switch_to_output(value=False)
 
-last_motion_ms = None
+last_motion_ms = None   # last time motion was confirmed
+trigger_times = []      # recent trigger timestamps, oldest first
+cooldown_until_ms = 0
+pir_was_high = False
+pir_high_since_ms = 0
+next_sustain_ms = 0
 
 
 def motion_recent(now):
     return last_motion_ms is not None and now - last_motion_ms <= ms(PIR_HOLD_S)
+
+
+def register_trigger(now):
+    global last_motion_ms
+    if state == STARTUP or now < cooldown_until_ms:
+        return
+    trigger_times.append(now)
+    while trigger_times and now - trigger_times[0] > ms(PIR_TRIGGER_WINDOW_S):
+        trigger_times.pop(0)
+    log("PIR trigger", len(trigger_times), "of", PIR_TRIGGERS_NEEDED)
+    if len(trigger_times) >= PIR_TRIGGERS_NEEDED:
+        last_motion_ms = now
+
+
+def update_pir(now):
+    """Turn the PIR output into triggers: one when it goes high, then one
+    more for every PIR_SUSTAIN_S it stays high."""
+    global pir_was_high, pir_high_since_ms, next_sustain_ms
+    motion = pir.value
+    led.value = motion
+    if motion and not pir_was_high:
+        pir_high_since_ms = now
+        next_sustain_ms = now + ms(PIR_SUSTAIN_S)
+        register_trigger(now)
+    elif motion and now >= next_sustain_ms:
+        next_sustain_ms += ms(PIR_SUSTAIN_S)
+        register_trigger(now)
+    elif not motion and pir_was_high:
+        log("PIR pulse", (now - pir_high_since_ms) / 1000, "s")
+    pir_was_high = motion
+
+
+def start_cooldown(now):
+    global cooldown_until_ms, last_motion_ms
+    cooldown_until_ms = now + ms(COOLDOWN_S)
+    last_motion_ms = None
+    del trigger_times[:]
+    if COOLDOWN_S:
+        log("Cooldown", COOLDOWN_S, "s")
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +399,7 @@ def run_behaviour(now):
             if motion_recent(now):
                 start_fit(now)
             else:
+                start_cooldown(now)
                 enter_state(WAITING, now)
 
 
@@ -363,10 +419,7 @@ last_update_ms = now_ms()
 while True:
     now = now_ms()
 
-    motion = pir.value
-    led.value = motion
-    if motion and state != STARTUP:
-        last_motion_ms = now
+    update_pir(now)
 
     dt_ms = now - last_update_ms
     if dt_ms >= ms(UPDATE_S):
