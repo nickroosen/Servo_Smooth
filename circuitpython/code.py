@@ -67,7 +67,7 @@ PIR_HOLD_S = 10            # keep going for this long after the last motion
 # Sound. WAVs must be mono, 16-bit, at SAMPLE_RATE (see README.md).
 SOUND_DIR = "/sounds"
 SAMPLE_RATE = 22050
-VOLUME = 0.8               # 0.0 .. 1.0
+VOLUME = 1.0               # 0.0 .. 1.0
 
 DEBUG = True               # print state changes to the serial console
 
