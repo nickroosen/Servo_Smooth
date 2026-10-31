@@ -23,6 +23,7 @@ import audiocore
 import audiomixer
 import board
 import digitalio
+import microcontroller
 import neopixel_write
 import pwmio
 
@@ -369,6 +370,9 @@ def update_pir(now):
 sonar_near = 0          # consecutive close readings
 sonar_pending = False   # a ping has been sent and not read yet
 next_ping_ms = 0
+sonar_seen_echo = False  # have we had at least one echo since start-up?
+last_echo_ms = 0        # last time any echo came back
+SONAR_NO_ECHO_WARN_S = 10
 if SENSOR == "sonar":
     import pulseio
 
@@ -387,15 +391,34 @@ def sonar_distance_cm():
 
 
 def sonar_ping():
+    # Start listening before triggering so the start of the echo can't be
+    # missed, then give a 20 us trigger pulse (the JSN-SR04T needs >= 10 us;
+    # time.sleep() can't do microseconds).
     sonar_echo.clear()
-    sonar_trig.value = True
-    time.sleep(0.00001)
-    sonar_trig.value = False
     sonar_echo.resume()
+    sonar_trig.value = True
+    microcontroller.delay_us(20)
+    sonar_trig.value = False
+
+
+def check_echo_health(now, cm):
+    """Report the first echo, and warn if the sensor stops answering."""
+    global sonar_seen_echo, last_echo_ms
+    if cm is not None:
+        if not sonar_seen_echo:
+            log("Sonar OK, first reading {:.0f} cm".format(cm))
+        sonar_seen_echo = True
+        last_echo_ms = now
+    elif now - last_echo_ms >= ms(SONAR_NO_ECHO_WARN_S):
+        log("Sonar: no echo for", SONAR_NO_ECHO_WARN_S,
+            "s - check 5V/GND, Trig on", SONAR_TRIG_PIN, "and Echo (via divider) on",
+            SONAR_ECHO_PIN)
+        last_echo_ms = now  # warn again in another SONAR_NO_ECHO_WARN_S
 
 
 def handle_distance(now, cm):
     global sonar_near, last_motion_ms
+    check_echo_health(now, cm)
     near = cm is not None and SONAR_MIN_CM <= cm <= SONAR_TRIGGER_CM
     led.value = near
     if SONAR_PRINT_DISTANCE:
