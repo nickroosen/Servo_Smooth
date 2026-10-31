@@ -165,9 +165,9 @@
 <circle cx="1090" cy="540" r="3" fill="#222222"/>
 <text x="1082" y="544" font-size="12" text-anchor="end" font-weight="normal" fill="#222222">G</text>
 <circle cx="1090" cy="600" r="3" fill="#222222"/>
-<text x="1082" y="604" font-size="12" text-anchor="end" font-weight="normal" fill="#222222">D6</text>
+<text x="1082" y="604" font-size="12" text-anchor="end" font-weight="normal" fill="#222222">D5</text>
 <circle cx="1090" cy="640" r="3" fill="#222222"/>
-<text x="1082" y="644" font-size="12" text-anchor="end" font-weight="normal" fill="#222222">D5</text>
+<text x="1082" y="644" font-size="12" text-anchor="end" font-weight="normal" fill="#222222">D6</text>
 <circle cx="1090" cy="760" r="3" fill="#222222"/>
 <text x="1082" y="764" font-size="12" text-anchor="end" font-weight="normal" fill="#222222">+</text>
 <circle cx="1090" cy="800" r="3" fill="#222222"/>

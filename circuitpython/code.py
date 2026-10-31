@@ -9,7 +9,7 @@
 #
 # Wiring (see README.md):
 #   Servo signals  -> D9, D10   (servo power from a separate 6 V UBEC!)
-#   JSN-SR04T      -> Trig to D6, Echo to D5 through a 1k/2k divider,
+#   JSN-SR04T      -> Trig to D5, Echo to D6 through a 1k/2k divider,
 #                     power from "5V" and "G" terminals
 #   or PIR output  -> "Btn" screw terminal, PIR power from "5V" and "G"
 #   Speaker        -> "+" and "-" screw terminals (one 4-8 ohm speaker)
@@ -70,8 +70,8 @@ COOLDOWN_S = 30            # after the bag settles, ignore the sensor this long
 # JSN-SR04T ultrasonic sensor. It triggers when something is closer than
 # SONAR_TRIGGER_CM for SONAR_READINGS_NEEDED readings in a row. Aim it across
 # the path, with nothing else (including the bag) inside that distance.
-SONAR_TRIG_PIN = board.D6
-SONAR_ECHO_PIN = board.D5  # through a 1k/2k divider - Echo is 5 V!
+SONAR_TRIG_PIN = board.D5
+SONAR_ECHO_PIN = board.D6  # through a 1k/2k divider - Echo is 5 V!
 SONAR_TRIGGER_CM = 150     # anything closer than this counts as a person
 SONAR_MIN_CM = 25          # the sensor can't measure closer than ~20-25 cm
 SONAR_READINGS_NEEDED = 3  # consecutive close readings (3 x 0.1 s = 0.3 s)
