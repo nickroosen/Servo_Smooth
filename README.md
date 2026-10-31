@@ -2,11 +2,11 @@
 
 Controller for the [Animatronic Body Bag](https://www.thingiverse.com/thing:1114406):
 two servos pull wire rope through a printed spine so a foam-filled bag
-wriggles. A motion sensor wakes it up and it plays a sound effect.
+wriggles. A sensor wakes it up when someone walks past, and it plays a sound effect.
 
 | Folder | What it is |
 | --- | --- |
-| `circuitpython/` | **Current build.** Adafruit RP2040 Prop-Maker Feather, DS3240MG servos, PIR sensor, one speaker. |
+| `circuitpython/` | **Current build.** Adafruit RP2040 Prop-Maker Feather, DS3240MG servos, JSN-SR04T ultrasonic sensor (or a PIR), one speaker. |
 | `servo_smooth/` | Arduino sketch for the old Uno + Motor Shield V2 + Audio FX build, updated for DS3240MG servos. |
 | `original/` | The 2015 sketch, kept for reference. |
 
@@ -18,7 +18,9 @@ wriggles. A motion sensor wakes it up and it plays a sound effect.
 | --- | --- |
 | [Adafruit RP2040 Prop-Maker Feather](https://www.adafruit.com/product/5768) | Replaces the Uno, Motor Shield and Audio FX board. |
 | 2 × DS3240MG servos, **270° version** | |
-| PIR motion sensor | Adafruit #189 or an HC-SR501. Needs 5 V. |
+| JSN-SR04T waterproof ultrasonic sensor | Detects people by distance. Not fooled by sun, heat or shadows. Needs 5 V. |
+| 1 kΩ + 2 kΩ resistors | Voltage divider for the sensor's 5 V Echo output (the Feather is 3.3 V). |
+| PIR motion sensor (alternative) | Adafruit #189 or an HC-SR501, if you'd rather use one. Prone to false triggers in the sun. |
 | 1 × speaker, 4 Ω or 8 Ω, up to 3 W | Mono amp, one speaker only. |
 | 6 V UBEC, **8 A continuous** | e.g. the Henge/FEICHAO 8A UBEC: 7–25.5 V in, jumper set to **6.0 V**. |
 | Power source | USB-C (option A) or a battery (option B), see [Power](#power). |
@@ -34,7 +36,7 @@ wriggles. A motion sensor wakes it up and it plays a sound effect.
 ### Tools
 
 - Multimeter, to check every supply voltage **before** connecting the servos or the Feather.
-- Soldering iron, for the capacitors, the trigger-board voltage jumper and the PIR header.
+- Soldering iron, for the capacitors, the resistors and the trigger-board voltage jumper.
 
 ## Power
 
@@ -110,9 +112,13 @@ converter is connected.
   5 V converter + ── Feather USB pin    (C3 220 uF across + and -,
   5 V converter - ── Feather GND         at the Feather)
 
-  PIR VCC ── terminal "5V"
-  PIR GND ── terminal "G"
-  PIR OUT ── terminal "Btn"
+  JSN-SR04T 5V   ── terminal "5V"
+  JSN-SR04T GND  ── terminal "G"
+  JSN-SR04T Trig ── Feather D5
+  JSN-SR04T Echo ── 1 kΩ ──┬── Feather D6
+                           └── 2 kΩ ── GND     (divider: 5 V Echo -> 3.3 V)
+
+  (PIR alternative: VCC "5V", GND "G", OUT "Btn", and set SENSOR = "pir")
 
   Speaker + / - ── terminals "+" / "-"
 ```
@@ -124,22 +130,42 @@ converter is connected.
   on 6.0 V, and never connect a 2S LiPo or the 20 V line to them directly.
 - The servo signals are 3.3 V. Most digital servos accept that. If they
   jitter, add the 74AHCT125 level shifter (powered from 5 V).
+- **Don't skip the Echo divider.** The JSN-SR04T's Echo output is 5 V, which can
+  damage the Feather's 3.3 V input. The 1 kΩ goes in series and the 2 kΩ to
+  ground, so D6 sees about 3.3 V.
 - **One speaker only.** The amp is mono and needs 4–8 Ω. Never wire two 4 Ω
   speakers in parallel (2 Ω).
 - The terminal-block 5V output, the amp and the servo header only get power
   once the code sets `EXTERNAL_POWER` high, which `code.py` does at start-up.
   That 5V output comes from the Feather's own 5 V (USB pin) supply, which is why
-  the PIR and the amp work best with the Feather on 5 V rather than a LiPo.
+  the sensor and the amp work best with the Feather on 5 V rather than a LiPo.
 
-### PIR settings
+### Ultrasonic sensor (JSN-SR04T)
+
+- **Aim it across the path** at about waist height, so people walk through
+  its beam. Make sure nothing else (walls, railings, plants, the bag itself) is
+  within `SONAR_TRIGGER_CM`. The beam is fairly wide, so leave some margin.
+- **Set the trigger distance:** set `SONAR_PRINT_DISTANCE = True` to print every
+  reading, note what it reads with nobody there and with someone on the path,
+  and set `SONAR_TRIGGER_CM` between the two. The default is 150 cm.
+- **Instant, with a small filter:** a fit starts after `SONAR_READINGS_NEEDED`
+  (3) close readings in a row, about 0.3 s. A single bad reading is ignored.
+- It can't see anything closer than about 20–25 cm (`SONAR_MIN_CM`). Keep the
+  sensor face clear of leaves and webs, and point it slightly down if rain
+  collects on it.
+- After a scare the sensor is ignored for `COOLDOWN_S` (30 s).
+
+### PIR settings (if using a PIR)
+
+Set `SENSOR = "pir"` in `code.py`.
 
 - Turn the **time** knob to minimum and set the jumper to **retrigger (H)**.
-  The code decides how long the bag keeps going (`PIR_HOLD_S`).
+  The code decides how long the bag keeps going (`MOTION_HOLD_S`).
 - After power-up the PIR needs 30–60 s to settle. The code ignores it for
   `PIR_WARMUP_S`, and the Feather's red LED mirrors the PIR output so you can
   aim it.
 
-### Outdoors: false triggers
+### PIR outdoors: false triggers
 
 A PIR reacts to any change in infrared heat, so sun on the lens, passing
 clouds, moving shadows and plants blowing in the wind can all look like a person.
@@ -167,17 +193,31 @@ you can check it from across the yard:
 
 | Colour | Meaning |
 | --- | --- |
-| Purple | Warming up. The PIR is ignored. |
-| Green | Armed and waiting for motion. |
-| Yellow | The PIR fired once and the code is waiting for a second trigger. A lone yellow flash with nobody around is a false trigger. |
+| Purple | Warming up. The sensor is ignored. |
+| Green | Armed and waiting for someone. |
+| Yellow | Something was detected and the code is waiting to confirm it (sonar: a few close readings; PIR: a second trigger). A lone yellow flash with nobody around is a false reading. |
 | Red | Scaring. |
 | Orange | Resting between fits. |
-| Blue | Cooldown after a scare. The PIR is ignored. |
+| Blue | Cooldown after a scare. The sensor is ignored. |
 
-The small red LED next to the USB port mirrors the raw PIR output.
+The small red LED next to the USB port lights while the sensor sees something (sonar: closer than the trigger distance; PIR: output high).
 `STATUS_LED = False` turns the RGB LED off, and `STATUS_BRIGHTNESS` sets how bright it is.
 
-**Serial console.** Every event is printed with the time since power-up:
+**Serial console.** Every event is printed with the time since power-up.
+With the ultrasonic sensor:
+
+```
+[0:00:20.1] Sonar: something at 90 cm
+[0:00:20.3] Sonar detection confirmed
+[0:00:20.3] Playing /sounds/scream.wav
+[0:00:20.3] -> FIT for 5552 ms
+[0:00:24.1] Sonar clear
+[0:00:25.8] -> RESTING for 8884 ms
+[0:00:34.7] Cooldown 30 s
+[0:00:40.3] Sonar detection ignored (cooldown, 24 s left)
+```
+
+With a PIR:
 
 ```
 [0:02:20.0] PIR trigger 1 of 2
@@ -239,16 +279,14 @@ couple of minutes of audio in total.
 ## Behaviour
 
 1. **Power-up**: the servos are enabled one at a time and centred, then switch
-   off. The PIR is ignored for 45 s while it warms up.
-2. **Motion** starts a **fit**: a random sound plays, and the servos thrash to
+   off. The sensor is ignored while it warms up (3 s for the ultrasonic
+   sensor, 45 s for a PIR).
+2. **Someone detected** starts a **fit**: a random sound plays, and the servos thrash to
    new random positions every 50–500 ms for 2.5–7 s, or until the sound ends.
 3. **Rest**: the spine eases back to straight and the servos switch off (no buzzing or
-   heating). After a random 2–10 s, if there has been motion in the last 10 s,
-   another fit starts. Otherwise it waits for the next motion, after a 30 s
-   cooldown.
-
-"Motion" means motion that has passed the false-trigger filter (see
-[Outdoors: false triggers](#outdoors-false-triggers)).
+   heating). After a random 2–10 s, if someone has been detected in the last
+   10 s, another fit starts. Otherwise it waits for the next person, after a
+   30 s cooldown.
 
 Motion goes through a two-stage low-pass filter with a hard speed cap, so
 changes of direction ease in and out instead of snapping.
@@ -257,11 +295,12 @@ changes of direction ease in and out instead of snapping.
 
 All settings are at the top of `code.py`. Saving the file restarts it.
 
-1. Set `PIR_WARMUP_S = 5` while testing, with the cables slack. Each servo
-   goes to `rest_deg`. If the spine isn't straight there, adjust `rest_deg`.
-2. Wave at the PIR. If a servo pulls the wrong way, flip `reversed`.
+1. With the cables slack, power up. Each servo goes to `rest_deg`. If the spine
+   isn't straight there, adjust `rest_deg`. (With a PIR, set `PIR_WARMUP_S = 5`
+   while testing.)
+2. Step in front of the sensor. If a servo pulls the wrong way, flip `reversed`.
 3. Widen `min_deg` / `max_deg` in steps of about 5°, and stop just before a cable goes fully taut.
-4. Put `PIR_WARMUP_S` back to 45.
+4. With a PIR, put `PIR_WARMUP_S` back to 45.
 
 | Setting | What it does |
 | --- | --- |
@@ -272,9 +311,14 @@ All settings are at the top of `code.py`. Saving the file restarts it.
 | `MIN_AMPLITUDE` | Minimum bend for each move (0–1). |
 | `NEW_TARGET_*`, `FIT_*`, `REST_*` | Timing ranges in seconds. |
 | `FIT_WAITS_FOR_SOUND` | Keep wriggling until the sound finishes. |
-| `PIR_WARMUP_S`, `PIR_HOLD_S` | PIR settle time, and how long motion keeps the bag active. |
-| `PIR_TRIGGERS_NEEDED`, `PIR_TRIGGER_WINDOW_S`, `PIR_SUSTAIN_S` | False-trigger filter. `PIR_TRIGGERS_NEEDED = 1` turns it off. |
-| `COOLDOWN_S` | How long the PIR is ignored after the bag settles. |
+| `SENSOR` | `"sonar"` (JSN-SR04T, default) or `"pir"`. |
+| `MOTION_HOLD_S` | How long a detection keeps the bag active. |
+| `COOLDOWN_S` | How long the sensor is ignored after the bag settles. |
+| `SONAR_TRIGGER_CM`, `SONAR_MIN_CM` | Detection distance range. |
+| `SONAR_READINGS_NEEDED`, `SONAR_PING_S` | Close readings in a row needed, and time between readings. |
+| `SONAR_PRINT_DISTANCE` | Print every distance reading, for aiming. |
+| `PIR_WARMUP_S` | PIR settle time. |
+| `PIR_TRIGGERS_NEEDED`, `PIR_TRIGGER_WINDOW_S`, `PIR_SUSTAIN_S` | PIR false-trigger filter. `PIR_TRIGGERS_NEEDED = 1` turns it off. |
 | `VOLUME` | 0.0–1.0 (default 1.0). For more, see [Louder sound](#louder-sound). |
 | `STATUS_LED`, `STATUS_BRIGHTNESS` | Built-in RGB status LED on/off and brightness. |
 | `DEBUG` | Prints timestamped events to the serial console. |

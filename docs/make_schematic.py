@@ -5,13 +5,13 @@ Run from the repo root:  python3 docs/make_schematic.py
 
 from pathlib import Path
 
-W, H = 1380, 900
+W, H = 1420, 920
 
 C20 = "#c62828"   # 20 V
 C6 = "#e67700"    # 6 V servo power
 C5 = "#6a3fb5"    # 5 V logic power
 CG = "#333333"    # ground
-CSIG = "#2e8b3a"  # servo/PIR signals
+CSIG = "#2e8b3a"  # servo/sensor signals
 CAUD = "#1565c0"  # speaker
 INK = "#222222"
 MUTED = "#666666"
@@ -92,6 +92,20 @@ def cap(x, y_top, name, value, color, label_side="right"):
     dot(x, y_top, color)
 
 
+def res_h(x1, x2, y, label):
+    """Horizontal resistor between x1 and x2, label above."""
+    add(f'<rect x="{x1}" y="{y - 7}" width="{x2 - x1}" height="14" rx="2" fill="#fff" '
+        f'stroke="{INK}" stroke-width="2"/>')
+    text((x1 + x2) / 2, y - 12, label, 12, "middle", "bold")
+
+
+def res_v(x, y1, y2, label):
+    """Vertical resistor between y1 and y2, label to the right."""
+    add(f'<rect x="{x - 7}" y="{y1}" width="14" height="{y2 - y1}" rx="2" fill="#fff" '
+        f'stroke="{INK}" stroke-width="2"/>')
+    text(x + 13, (y1 + y2) / 2 + 4, label, 12, weight="bold")
+
+
 def net_label(x, y, s, color):
     text(x, y, s, 12, "middle", "bold", color)
 
@@ -101,7 +115,7 @@ add(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
 add(f'<rect width="{W}" height="{H}" fill="#ffffff"/>')
 
 text(30, 38, "Animatronic Body Bag: wiring", 22, weight="bold")
-text(30, 60, "RP2040 Prop-Maker Feather, 2 × DS3240MG (270°), PIR, one speaker, USB-C PD power",
+text(30, 60, "RP2040 Prop-Maker Feather, 2 × DS3240MG (270°), JSN-SR04T ultrasonic sensor, one speaker, USB-C PD power",
      13, color=MUTED)
 
 # --- USB-C charger and trigger board -----------------------------------------
@@ -172,7 +186,7 @@ net_label(725, 552, "5 V", C5)
 cap(770, 560, "C3", "220 µF", C5)
 
 # --- Feather -------------------------------------------------------------------
-FX, FY, FW, FH = 850, 450, 240, 330
+FX, FY, FW, FH = 850, 450, 240, 400
 add(f'<rect x="{FX}" y="{FY}" width="{FW}" height="{FH}" rx="8" fill="{BOX_FILL}" '
     f'stroke="{INK}" stroke-width="2"/>')
 text(FX + FW / 2, FY + 330 / 2 - 8, "RP2040 Prop-Maker", 15, "middle", "bold")
@@ -188,30 +202,39 @@ pin(1010, FY, "D10", "top")
 wire([(920, 170), (920, FY)], CSIG)
 wire([(1130, 170), (1130, 390), (1010, 390), (1010, FY)], CSIG)
 
-# Terminal block on the right
-terms = [(520, "5V"), (560, "G"), (600, "Btn"), (680, "+"), (720, "−")]
-for y, label in terms:
+# Right edge: terminal block (5V, G, +, -) and header pins D5/D6
+for y, label in [(500, "5V"), (540, "G"), (600, "D5"), (640, "D6"), (760, "+"), (800, "−")]:
     pin(FX + FW, y, label, "right")
-text(FX + FW - 8, 500, "terminal block", 11, "end", color=MUTED, italic=True)
-text(FX + 20, 755, "servo header: not used", 11, color=MUTED, italic=True)
+text(FX + FW - 8, 487, "terminal block", 11, "end", color=MUTED, italic=True)
+text(FX + 20, FY + FH - 22, "servo header: not used", 11, color=MUTED, italic=True)
 
-# --- PIR -----------------------------------------------------------------------
-box(1200, 480, 150, 145, "PIR sensor")
-text(1340, 580, "time knob: min", 11, "end", color=MUTED)
-text(1340, 596, "jumper: H", 11, "end", color=MUTED)
-pin(1200, 520, "VCC", "left")
-pin(1200, 560, "GND", "left")
-pin(1200, 600, "OUT", "left")
-wire([(FX + FW, 520), (1200, 520)], C5)
-wire([(FX + FW, 560), (1200, 560)], CG)
-wire([(FX + FW, 600), (1200, 600)], CSIG)
+# --- JSN-SR04T ultrasonic sensor ------------------------------------------------
+SX = 1240
+box(SX, 470, 150, 200, "JSN-SR04T", "ultrasonic, 5 V")
+pin(SX, 500, "5V", "left")
+pin(SX, 540, "GND", "left")
+pin(SX, 600, "Trig", "left")
+pin(SX, 640, "Echo", "left")
+wire([(FX + FW, 500), (SX, 500)], C5)
+wire([(FX + FW, 540), (SX, 540)], CG)
+wire([(FX + FW, 600), (SX, 600)], CSIG)
+# Echo is 5 V: 1k in series, 2k to ground -> about 3.3 V at D6
+wire([(SX, 640), (1200, 640)], CSIG)
+res_h(1155, 1200, 640, "R1 1 kΩ")
+wire([(1155, 640), (FX + FW, 640)], CSIG)
+dot(1122, 640, CSIG)
+wire([(1122, 640), (1122, 655)], CSIG)
+res_v(1122, 655, 695, "R2 2 kΩ")
+wire([(1122, 695), (1122, 705)], CG)
+ground(1122, 705)
+text(SX + 75, 690, "Echo divider: 5 V → 3.3 V", 11, "middle", color=MUTED, italic=True)
 
 # --- Speaker -------------------------------------------------------------------
-box(1200, 650, 150, 100, "Speaker", "4–8 Ω, ≤ 3 W")
-pin(1200, 680, "+", "left")
-pin(1200, 720, "−", "left")
-wire([(FX + FW, 680), (1200, 680)], CAUD)
-wire([(FX + FW, 720), (1200, 720)], CAUD)
+box(SX, 730, 150, 100, "Speaker", "4–8 Ω, ≤ 3 W")
+pin(SX, 760, "+", "left")
+pin(SX, 800, "−", "left")
+wire([(FX + FW, 760), (SX, 760)], CAUD)
+wire([(FX + FW, 800), (SX, 800)], CAUD)
 
 # --- Legend and notes ----------------------------------------------------------
 LX, LY = 30, 360
@@ -220,7 +243,7 @@ add(f'<rect x="{LX}" y="{LY}" width="280" height="170" rx="8" fill="#fff" '
 text(LX + 14, LY + 24, "Legend", 14, weight="bold")
 for i, (color, label) in enumerate([(C20, "20 V from trigger board"),
                                     (C6, "6 V servo power (18 AWG)"),
-                                    (C5, "5 V Feather / PIR power"),
+                                    (C5, "5 V Feather / sensor power"),
                                     (CG, "Ground"),
                                     (CSIG, "Signal"),
                                     (CAUD, "Speaker")]):
@@ -230,7 +253,7 @@ for i, (color, label) in enumerate([(C20, "20 V from trigger board"),
 
 ground(LX + 30, 700)
 text(LX + 50, 722, "All grounds are connected together", 13, weight="bold")
-text(LX + 50, 740, "(common ground: trigger −, UBEC, buck, Feather, servos, PIR)", 12,
+text(LX + 50, 740, "(common ground: trigger −, UBEC, buck, Feather, servos, sensor)", 12,
      color=MUTED)
 dot(LX + 22, 762, INK)
 text(LX + 50, 766, "Dot = joined. Wires crossing without a dot are not connected.", 12,
@@ -241,6 +264,7 @@ notes = [
     "  trigger board 20 V  ·  UBEC out 6.0 V (not 7.4 V)  ·  buck out 4.9–5.2 V",
     "Capacitors: stripe (−) to ground, keep leads short. C2 close to the servo power split.",
     "Don't plug the Feather into a computer while the buck is connected (disconnect buck +).",
+    "PIR instead of JSN-SR04T: VCC → 5V, GND → G, OUT → Btn terminal; set SENSOR = \"pir\".",
 ]
 for i, line in enumerate(notes):
     text(30, 812 + i * 20, line, 12, color=INK if i == 0 else MUTED,

@@ -1,15 +1,17 @@
 # Servo_Smooth - animatronic body bag for the Adafruit RP2040 Prop-Maker Feather
 #
-# Two DS3240MG servos pull the spine cables, a PIR sensor wakes the bag up,
-# and a random WAV from /sounds plays through the on-board I2S amp each time
-# it starts wriggling.
+# Two DS3240MG servos pull the spine cables, an ultrasonic distance sensor
+# (JSN-SR04T) or a PIR wakes the bag up, and a random WAV from /sounds plays
+# through the on-board I2S amp each time it starts wriggling.
 #
 # Copy this file and a "sounds" folder of WAVs to the CIRCUITPY drive.
 # No libraries from the bundle are needed.
 #
 # Wiring (see README.md):
 #   Servo signals  -> D9, D10   (servo power from a separate 6 V UBEC!)
-#   PIR output     -> "Btn" screw terminal, PIR power from "5V" and "G"
+#   JSN-SR04T      -> Trig to D5, Echo to D6 through a 1k/2k divider,
+#                     power from "5V" and "G" terminals
+#   or PIR output  -> "Btn" screw terminal, PIR power from "5V" and "G"
 #   Speaker        -> "+" and "-" screw terminals (one 4-8 ohm speaker)
 
 import os
@@ -60,10 +62,26 @@ REST_MIN_S = 2.0           # pause between fits
 REST_MAX_S = 10.0
 DETACH_AFTER_S = 1.5       # stop driving the servos once settled at rest
 
-# PIR motion sensor
+# Which sensor wakes the bag up: "sonar" (JSN-SR04T ultrasonic) or "pir".
+SENSOR = "sonar"
+MOTION_HOLD_S = 10         # keep going for this long after the last detection
+COOLDOWN_S = 30            # after the bag settles, ignore the sensor this long
+
+# JSN-SR04T ultrasonic sensor. It triggers when something is closer than
+# SONAR_TRIGGER_CM for SONAR_READINGS_NEEDED readings in a row. Aim it across
+# the path, with nothing else (including the bag) inside that distance.
+SONAR_TRIG_PIN = board.D5
+SONAR_ECHO_PIN = board.D6  # through a 1k/2k divider - Echo is 5 V!
+SONAR_TRIGGER_CM = 150     # anything closer than this counts as a person
+SONAR_MIN_CM = 25          # the sensor can't measure closer than ~20-25 cm
+SONAR_READINGS_NEEDED = 3  # consecutive close readings (3 x 0.1 s = 0.3 s)
+SONAR_PING_S = 0.1         # time between readings
+SONAR_WARMUP_S = 3
+SONAR_PRINT_DISTANCE = False  # print every reading, handy for aiming
+
+# PIR motion sensor (SENSOR = "pir")
 PIR_PIN = board.EXTERNAL_BUTTON  # the "Btn" screw terminal
 PIR_WARMUP_S = 45          # PIR output is unreliable for ~30-60 s after power-up
-PIR_HOLD_S = 10            # keep going for this long after the last motion
 
 # False-trigger filtering (sunlight, shadows, wind). A "trigger" is the PIR
 # output going high, plus one more for every PIR_SUSTAIN_S it stays high.
@@ -74,7 +92,6 @@ PIR_HOLD_S = 10            # keep going for this long after the last motion
 PIR_TRIGGERS_NEEDED = 2
 PIR_TRIGGER_WINDOW_S = 8
 PIR_SUSTAIN_S = 4
-COOLDOWN_S = 30            # after the bag settles, ignore the PIR this long
 
 # Sound. WAVs must be mono, 16-bit, at SAMPLE_RATE (see README.md).
 SOUND_DIR = "/sounds"
@@ -211,7 +228,7 @@ def pick_new_targets():
 # Sound
 # ---------------------------------------------------------------------------
 
-# The amp, servo header and 5V terminal (which powers the PIR) are all off
+# The amp, servo header and 5V terminal (which powers the sensor) are all off
 # until this pin goes high.
 external_power = digitalio.DigitalInOut(board.EXTERNAL_POWER)
 external_power.switch_to_output(value=True)
@@ -281,34 +298,45 @@ def sound_playing():
 
 
 # ---------------------------------------------------------------------------
-# PIR
+# Sensors
 # ---------------------------------------------------------------------------
 
-pir = digitalio.DigitalInOut(PIR_PIN)
-pir.switch_to_input(pull=digitalio.Pull.DOWN)  # reads "no motion" if unplugged
-
-led = digitalio.DigitalInOut(board.LED)  # mirrors the PIR, handy for aiming it
+led = digitalio.DigitalInOut(board.LED)  # mirrors the raw sensor, handy for aiming
 led.switch_to_output(value=False)
 
 last_motion_ms = None   # last time motion was confirmed
-trigger_times = []      # recent trigger timestamps, oldest first
+trigger_times = []      # recent PIR trigger timestamps, oldest first
 cooldown_until_ms = 0
-pir_was_high = False
-pir_high_since_ms = 0
-next_sustain_ms = 0
 
 
 def motion_recent(now):
-    return last_motion_ms is not None and now - last_motion_ms <= ms(PIR_HOLD_S)
+    return last_motion_ms is not None and now - last_motion_ms <= ms(MOTION_HOLD_S)
+
+
+def ignored_reason(now):
+    """Why detections are being ignored right now, or None."""
+    if state == STARTUP:
+        return "warm-up"
+    if now < cooldown_until_ms:
+        return "cooldown, {} s left".format((cooldown_until_ms - now) // 1000)
+    return None
+
+
+# --- PIR -------------------------------------------------------------------
+
+pir_was_high = False
+pir_high_since_ms = 0
+next_sustain_ms = 0
+if SENSOR == "pir":
+    pir = digitalio.DigitalInOut(PIR_PIN)
+    pir.switch_to_input(pull=digitalio.Pull.DOWN)  # reads "no motion" if unplugged
 
 
 def register_trigger(now):
     global last_motion_ms
-    if state == STARTUP:
-        log("PIR trigger ignored (warm-up)")
-        return
-    if now < cooldown_until_ms:
-        log("PIR trigger ignored (cooldown,", (cooldown_until_ms - now) // 1000, "s left)")
+    reason = ignored_reason(now)
+    if reason:
+        log("PIR trigger ignored (" + reason + ")")
         return
     trigger_times.append(now)
     while trigger_times and now - trigger_times[0] > ms(PIR_TRIGGER_WINDOW_S):
@@ -336,11 +364,86 @@ def update_pir(now):
     pir_was_high = motion
 
 
+# --- JSN-SR04T ultrasonic ----------------------------------------------------
+
+sonar_near = 0          # consecutive close readings
+sonar_pending = False   # a ping has been sent and not read yet
+next_ping_ms = 0
+if SENSOR == "sonar":
+    import pulseio
+
+    sonar_trig = digitalio.DigitalInOut(SONAR_TRIG_PIN)
+    sonar_trig.switch_to_output(value=False)
+    sonar_echo = pulseio.PulseIn(SONAR_ECHO_PIN, maxlen=2, idle_state=False)
+    sonar_echo.pause()
+
+
+def sonar_distance_cm():
+    """Read the echo from the last ping. None if there was no usable echo."""
+    sonar_echo.pause()
+    if not len(sonar_echo):
+        return None
+    return sonar_echo[0] / 58  # echo time in us -> cm (there and back)
+
+
+def sonar_ping():
+    sonar_echo.clear()
+    sonar_trig.value = True
+    time.sleep(0.00001)
+    sonar_trig.value = False
+    sonar_echo.resume()
+
+
+def handle_distance(now, cm):
+    global sonar_near, last_motion_ms
+    near = cm is not None and SONAR_MIN_CM <= cm <= SONAR_TRIGGER_CM
+    led.value = near
+    if SONAR_PRINT_DISTANCE:
+        log("Distance", "none" if cm is None else "{:.0f} cm".format(cm))
+    if not near:
+        if sonar_near:
+            log("Sonar clear")
+        sonar_near = 0
+        return
+    sonar_near += 1
+    if sonar_near == 1:
+        log("Sonar: something at {:.0f} cm".format(cm))
+    if sonar_near < SONAR_READINGS_NEEDED:
+        return
+    reason = ignored_reason(now)
+    if reason:
+        if sonar_near == SONAR_READINGS_NEEDED:
+            log("Sonar detection ignored (" + reason + ")")
+        return
+    if not motion_recent(now):
+        log("Sonar detection confirmed")
+    last_motion_ms = now
+
+
+def update_sonar(now):
+    global sonar_pending, next_ping_ms
+    if now < next_ping_ms:
+        return
+    if sonar_pending:
+        handle_distance(now, sonar_distance_cm())
+    sonar_ping()
+    sonar_pending = True
+    next_ping_ms = now + ms(SONAR_PING_S)
+
+
+def update_sensor(now):
+    if SENSOR == "sonar":
+        update_sonar(now)
+    else:
+        update_pir(now)
+
+
 def start_cooldown(now):
-    global cooldown_until_ms, last_motion_ms
+    global cooldown_until_ms, last_motion_ms, sonar_near
     cooldown_until_ms = now + ms(COOLDOWN_S)
     last_motion_ms = None
     del trigger_times[:]
+    sonar_near = 0
     if COOLDOWN_S:
         log("Cooldown", COOLDOWN_S, "s")
 
@@ -428,12 +531,12 @@ def run_behaviour(now):
 # ---------------------------------------------------------------------------
 
 COLOURS = {
-    "warmup": (128, 0, 255),    # purple: PIR warming up, ignored
-    "armed": (0, 255, 0),       # green: waiting for motion
-    "pending": (255, 160, 0),   # yellow: PIR fired, waiting for confirmation
+    "warmup": (128, 0, 255),    # purple: warming up, sensor ignored
+    "armed": (0, 255, 0),       # green: waiting for someone
+    "pending": (255, 160, 0),   # yellow: detected, waiting for confirmation
     "fit": (255, 0, 0),         # red: scaring
     "resting": (255, 60, 0),    # orange: pause between fits
-    "cooldown": (0, 0, 255),    # blue: PIR ignored after a scare
+    "cooldown": (0, 0, 255),    # blue: sensor ignored after a scare
 }
 
 status_pin = None
@@ -452,7 +555,10 @@ def status_name(now):
         return "resting"
     if now < cooldown_until_ms:
         return "cooldown"
-    if trigger_times and now - trigger_times[-1] <= ms(PIR_TRIGGER_WINDOW_S):
+    if SENSOR == "sonar" and 0 < sonar_near < SONAR_READINGS_NEEDED:
+        return "pending"
+    if SENSOR == "pir" and trigger_times and \
+            now - trigger_times[-1] <= ms(PIR_TRIGGER_WINDOW_S):
         return "pending"
     return "armed"
 
@@ -479,13 +585,15 @@ for a in axes:
     a.enable()
     time.sleep(0.4)
 
-enter_state(STARTUP, now_ms(), ms(PIR_WARMUP_S))
+log("Sensor:", SENSOR)
+warmup_s = SONAR_WARMUP_S if SENSOR == "sonar" else PIR_WARMUP_S
+enter_state(STARTUP, now_ms(), ms(warmup_s))
 last_update_ms = now_ms()
 
 while True:
     now = now_ms()
 
-    update_pir(now)
+    update_sensor(now)
 
     dt_ms = now - last_update_ms
     if dt_ms >= ms(UPDATE_S):
