@@ -68,17 +68,19 @@ SENSOR = "sonar"
 COOLDOWN_S = 30            # after the bag settles, ignore the sensor this long
 
 # JSN-SR04T ultrasonic sensor. It triggers when something is closer than
-# SONAR_TRIGGER_CM for SONAR_READINGS_NEEDED readings in a row. Aim it across
+# SONAR_TRIGGER_CM for SONAR_READINGS_NEEDED readings within
+# SONAR_CONFIRM_WINDOW_S (missed readings are ignored). Aim it across
 # the path, with nothing else (including the bag) inside that distance.
 SONAR_TRIG_PIN = board.D5
 SONAR_ECHO_PIN = board.D6  # through a 1k/2k divider - Echo is 5 V!
 SONAR_TRIGGER_CM = 150     # anything closer than this counts as a person
 SONAR_MIN_CM = 25          # the sensor can't measure closer than ~20-25 cm
-SONAR_READINGS_NEEDED = 3  # consecutive close readings (3 x 0.1 s = 0.3 s)
+SONAR_READINGS_NEEDED = 3  # close readings needed...
+SONAR_CONFIRM_WINDOW_S = 1.0  # ...within this long
 SONAR_PING_S = 0.1         # time between readings
 SONAR_WARMUP_S = 3
 SONAR_PRINT_DISTANCE = False  # print every reading, handy for aiming
-SONAR_HOLD_S = 1           # after a fit, go again only if seen this recently
+SONAR_HOLD_S = 1.5         # after a fit, go again only if seen this recently
 
 # PIR motion sensor (SENSOR = "pir")
 PIR_PIN = board.EXTERNAL_BUTTON  # the "Btn" screw terminal
@@ -379,7 +381,8 @@ def update_pir(now):
 SONAR_ECHO_START_TIMEOUT_US = 10000  # echo should start within a few ms
 SONAR_NO_ECHO_WARN_S = 10
 
-sonar_near = 0           # consecutive close readings
+near_times = []          # times of recent close readings, oldest first
+ignore_logged = False    # "ignored" already printed for this approach
 next_ping_ms = 0
 sonar_seen_echo = False  # has the sensor answered at all since start-up?
 last_answer_ms = 0       # last time the sensor answered
@@ -440,12 +443,12 @@ def check_sonar_health(now, status, cm):
 
 
 def handle_distance(now, status, cm):
-    global sonar_near, last_motion_ms
+    """Count close readings in a sliding window. Missed or far readings in
+    between don't reset it - some JSN-SR04Ts skip triggers while busy."""
+    global last_motion_ms, ignore_logged
     check_sonar_health(now, status, cm)
     if status == "busy":
         return
-    near = status == "ok" and SONAR_MIN_CM <= cm <= SONAR_TRIGGER_CM
-    led.value = near
     if SONAR_PRINT_DISTANCE:
         if status == "ok":
             log("Distance {:.0f} cm".format(cm))
@@ -453,20 +456,27 @@ def handle_distance(now, status, cm):
             log("Distance >", SONAR_TRIGGER_CM, "cm")
         else:
             log("Distance: no echo")
+    window = ms(SONAR_CONFIRM_WINDOW_S)
+    if near_times and now - near_times[-1] > window:
+        log("Sonar clear")
+        del near_times[:]
+        ignore_logged = False
+    while near_times and now - near_times[0] > window:
+        near_times.pop(0)
+    near = status == "ok" and SONAR_MIN_CM <= cm <= SONAR_TRIGGER_CM
+    led.value = bool(near_times) or near
     if not near:
-        if sonar_near:
-            log("Sonar clear")
-        sonar_near = 0
         return
-    sonar_near += 1
-    if sonar_near == 1:
+    if not near_times:
         log("Sonar: something at {:.0f} cm".format(cm))
-    if sonar_near < SONAR_READINGS_NEEDED:
+    near_times.append(now)
+    if len(near_times) < SONAR_READINGS_NEEDED:
         return
     reason = ignored_reason(now)
     if reason:
-        if sonar_near == SONAR_READINGS_NEEDED:
+        if not ignore_logged:
             log("Sonar detection ignored (" + reason + ")")
+            ignore_logged = True
         return
     if not motion_recent(now):
         log("Sonar detection confirmed")
@@ -496,18 +506,17 @@ def update_sensor(now):
 
 def reset_detection():
     """Forget earlier detections, so the next fit needs a fresh one."""
-    global last_motion_ms, sonar_near
+    global last_motion_ms, ignore_logged
     last_motion_ms = None
-    sonar_near = 0
+    ignore_logged = False
+    del near_times[:]
     del trigger_times[:]
 
 
 def start_cooldown(now):
-    global cooldown_until_ms, last_motion_ms, sonar_near
+    global cooldown_until_ms
     cooldown_until_ms = now + ms(COOLDOWN_S)
-    last_motion_ms = None
-    del trigger_times[:]
-    sonar_near = 0
+    reset_detection()
     if COOLDOWN_S:
         log("Cooldown", COOLDOWN_S, "s")
 
@@ -620,7 +629,7 @@ def status_name(now):
         return "resting"
     if now < cooldown_until_ms:
         return "cooldown"
-    if SENSOR == "sonar" and 0 < sonar_near < SONAR_READINGS_NEEDED:
+    if SENSOR == "sonar" and 0 < len(near_times) < SONAR_READINGS_NEEDED:
         return "pending"
     if SENSOR == "pir" and trigger_times and \
             now - trigger_times[-1] <= ms(PIR_TRIGGER_WINDOW_S):

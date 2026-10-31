@@ -151,8 +151,10 @@ converter is connected.
 - **Set the trigger distance:** set `SONAR_PRINT_DISTANCE = True` to print every
   reading, note what it reads with nobody there and with someone on the path,
   and set `SONAR_TRIGGER_CM` between the two. The default is 150 cm.
-- **Instant, with a small filter:** a fit starts after `SONAR_READINGS_NEEDED`
-  (3) close readings in a row, about 0.3 s. A single bad reading is ignored.
+- **Fast, with a small filter:** a fit starts after `SONAR_READINGS_NEEDED`
+  (3) close readings within `SONAR_CONFIRM_WINDOW_S` (1 s). Missed or odd
+  readings in between don't reset the count (some JSN-SR04Ts only answer every
+  few hundred ms), and a single stray reading is ignored.
 - It can't see anything closer than about 20–25 cm (`SONAR_MIN_CM`). Keep the
   sensor face clear of leaves and webs, and point it slightly down if rain
   collects on it.
@@ -321,7 +323,7 @@ All settings are at the top of `code.py`. Saving the file restarts it.
 | `SONAR_HOLD_S`, `PIR_HOLD_S` | After a fit, another one starts only if someone was detected this recently (1 s for sonar, 10 s for PIR). |
 | `COOLDOWN_S` | How long the sensor is ignored after the bag settles. |
 | `SONAR_TRIGGER_CM`, `SONAR_MIN_CM` | Detection distance range. |
-| `SONAR_READINGS_NEEDED`, `SONAR_PING_S` | Close readings in a row needed, and time between readings. |
+| `SONAR_READINGS_NEEDED`, `SONAR_CONFIRM_WINDOW_S`, `SONAR_PING_S` | Close readings needed within the window (3 in 1 s), and time between readings. Missed readings don't reset the count. |
 | `SONAR_PRINT_DISTANCE` | Print every distance reading, for aiming. |
 | `PIR_WARMUP_S` | PIR settle time. |
 | `PIR_TRIGGERS_NEEDED`, `PIR_TRIGGER_WINDOW_S`, `PIR_SUSTAIN_S` | PIR false-trigger filter. `PIR_TRIGGERS_NEEDED = 1` turns it off. |
