@@ -163,7 +163,7 @@ converter is connected.
 Set `SENSOR = "pir"` in `code.py`.
 
 - Turn the **time** knob to minimum and set the jumper to **retrigger (H)**.
-  The code decides how long the bag keeps going (`MOTION_HOLD_S`).
+  The code decides how long the bag keeps going (`PIR_HOLD_S`).
 - After power-up the PIR needs 30–60 s to settle. The code ignores it for
   `PIR_WARMUP_S`, and the Feather's red LED mirrors the PIR output so you can
   aim it.
@@ -287,9 +287,12 @@ couple of minutes of audio in total.
 2. **Someone detected** starts a **fit**: a random sound plays, and the servos thrash to
    new random positions every 50–500 ms for 2.5–7 s, or until the sound ends.
 3. **Rest**: the spine eases back to straight and the servos switch off (no buzzing or
-   heating). After a random 2–10 s, if someone has been detected in the last
-   10 s, another fit starts. Otherwise it waits for the next person, after a
-   30 s cooldown.
+   heating). Earlier detections are forgotten, and the sensor is ignored
+   during each fit (the sonar stops reading so it can't see the bag itself).
+   After a random 2–10 s, another fit starts only if someone is freshly
+   detected during the rest and is still there (seen in the last 1 s for the
+   sonar, 10 s for a PIR). Otherwise it waits for the next person, after a 30 s
+   cooldown.
 
 Motion goes through a two-stage low-pass filter with a hard speed cap, so
 changes of direction ease in and out instead of snapping.
@@ -315,7 +318,7 @@ All settings are at the top of `code.py`. Saving the file restarts it.
 | `NEW_TARGET_*`, `FIT_*`, `REST_*` | Timing ranges in seconds. |
 | `FIT_WAITS_FOR_SOUND` | Keep wriggling until the sound finishes. |
 | `SENSOR` | `"sonar"` (JSN-SR04T, default) or `"pir"`. |
-| `MOTION_HOLD_S` | How long a detection keeps the bag active. |
+| `SONAR_HOLD_S`, `PIR_HOLD_S` | After a fit, another one starts only if someone was detected this recently (1 s for sonar, 10 s for PIR). |
 | `COOLDOWN_S` | How long the sensor is ignored after the bag settles. |
 | `SONAR_TRIGGER_CM`, `SONAR_MIN_CM` | Detection distance range. |
 | `SONAR_READINGS_NEEDED`, `SONAR_PING_S` | Close readings in a row needed, and time between readings. |

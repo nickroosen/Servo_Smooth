@@ -65,7 +65,6 @@ DETACH_AFTER_S = 1.5       # stop driving the servos once settled at rest
 
 # Which sensor wakes the bag up: "sonar" (JSN-SR04T ultrasonic) or "pir".
 SENSOR = "sonar"
-MOTION_HOLD_S = 10         # keep going for this long after the last detection
 COOLDOWN_S = 30            # after the bag settles, ignore the sensor this long
 
 # JSN-SR04T ultrasonic sensor. It triggers when something is closer than
@@ -79,10 +78,12 @@ SONAR_READINGS_NEEDED = 3  # consecutive close readings (3 x 0.1 s = 0.3 s)
 SONAR_PING_S = 0.1         # time between readings
 SONAR_WARMUP_S = 3
 SONAR_PRINT_DISTANCE = False  # print every reading, handy for aiming
+SONAR_HOLD_S = 1           # after a fit, go again only if seen this recently
 
 # PIR motion sensor (SENSOR = "pir")
 PIR_PIN = board.EXTERNAL_BUTTON  # the "Btn" screw terminal
 PIR_WARMUP_S = 45          # PIR output is unreliable for ~30-60 s after power-up
+PIR_HOLD_S = 10            # after a fit, go again if motion was seen this recently
 
 # False-trigger filtering (sunlight, shadows, wind). A "trigger" is the PIR
 # output going high, plus one more for every PIR_SUSTAIN_S it stays high.
@@ -311,13 +312,16 @@ cooldown_until_ms = 0
 
 
 def motion_recent(now):
-    return last_motion_ms is not None and now - last_motion_ms <= ms(MOTION_HOLD_S)
+    hold_s = SONAR_HOLD_S if SENSOR == "sonar" else PIR_HOLD_S
+    return last_motion_ms is not None and now - last_motion_ms <= ms(hold_s)
 
 
 def ignored_reason(now):
     """Why detections are being ignored right now, or None."""
     if state == STARTUP:
         return "warm-up"
+    if state == FIT:
+        return "scaring"
     if now < cooldown_until_ms:
         return "cooldown, {} s left".format((cooldown_until_ms - now) // 1000)
     return None
@@ -471,6 +475,11 @@ def handle_distance(now, status, cm):
 
 def update_sonar(now):
     global next_ping_ms
+    if state == FIT:
+        # Don't read while the bag thrashes: it could see the bag itself, and
+        # skipping the readings keeps the servo motion smooth.
+        led.value = False
+        return
     if now < next_ping_ms:
         return
     next_ping_ms = now + ms(SONAR_PING_S)
@@ -483,6 +492,14 @@ def update_sensor(now):
         update_sonar(now)
     else:
         update_pir(now)
+
+
+def reset_detection():
+    """Forget earlier detections, so the next fit needs a fresh one."""
+    global last_motion_ms, sonar_near
+    last_motion_ms = None
+    sonar_near = 0
+    del trigger_times[:]
 
 
 def start_cooldown(now):
@@ -558,6 +575,7 @@ def run_behaviour(now):
             done = False
         if done:
             go_to_rest()
+            reset_detection()
             enter_state(RESTING, now, random_ms(REST_MIN_S, REST_MAX_S))
         elif now >= next_target_ms:
             pick_new_targets()
