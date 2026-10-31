@@ -158,7 +158,7 @@ clouds, moving shadows and plants blowing in the wind can all look like a person
   The shorter it is, the faster the bag reacts to real people. Set
   `PIR_TRIGGERS_NEEDED = 1` to turn the filter off.
 - **Cooldown:** once the bag has settled after a scare, the PIR is ignored for
-  `COOLDOWN_S` (20 s).
+  `COOLDOWN_S` (30 s).
 
 ### Mechanical notes
 
@@ -212,7 +212,7 @@ couple of minutes of audio in total.
    new random positions every 50–500 ms for 2.5–7 s, or until the sound ends.
 3. **Rest**: the spine eases back to straight and the servos switch off (no buzzing or
    heating). After a random 2–10 s, if there has been motion in the last 10 s,
-   another fit starts. Otherwise it waits for the next motion, after a 20 s
+   another fit starts. Otherwise it waits for the next motion, after a 30 s
    cooldown.
 
 "Motion" means motion that has passed the false-trigger filter (see

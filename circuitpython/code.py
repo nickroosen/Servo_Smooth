@@ -73,7 +73,7 @@ PIR_HOLD_S = 10            # keep going for this long after the last motion
 PIR_TRIGGERS_NEEDED = 2
 PIR_TRIGGER_WINDOW_S = 8
 PIR_SUSTAIN_S = 4
-COOLDOWN_S = 20            # after the bag settles, ignore the PIR this long
+COOLDOWN_S = 30            # after the bag settles, ignore the PIR this long
 
 # Sound. WAVs must be mono, 16-bit, at SAMPLE_RATE (see README.md).
 SOUND_DIR = "/sounds"
