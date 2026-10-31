@@ -366,63 +366,89 @@ def update_pir(now):
 
 
 # --- JSN-SR04T ultrasonic ----------------------------------------------------
+#
+# Each reading sends a 20 us trigger pulse and times the Echo pulse by polling
+# the pin (more dependable than pulseio on the RP2040). It only waits as long
+# as an echo from SONAR_TRIGGER_CM would take, so a reading blocks for at most
+# ~15 ms; anything further away just reads as "far".
 
-sonar_near = 0          # consecutive close readings
-sonar_pending = False   # a ping has been sent and not read yet
-next_ping_ms = 0
-sonar_seen_echo = False  # have we had at least one echo since start-up?
-last_echo_ms = 0        # last time any echo came back
+SONAR_ECHO_START_TIMEOUT_US = 10000  # echo should start within a few ms
 SONAR_NO_ECHO_WARN_S = 10
-if SENSOR == "sonar":
-    import pulseio
 
+sonar_near = 0           # consecutive close readings
+next_ping_ms = 0
+sonar_seen_echo = False  # has the sensor answered at all since start-up?
+last_answer_ms = 0       # last time the sensor answered
+busy_since_ms = None     # Echo already high when we wanted to ping
+if SENSOR == "sonar":
     sonar_trig = digitalio.DigitalInOut(SONAR_TRIG_PIN)
     sonar_trig.switch_to_output(value=False)
-    sonar_echo = pulseio.PulseIn(SONAR_ECHO_PIN, maxlen=2, idle_state=False)
-    sonar_echo.pause()
+    sonar_echo = digitalio.DigitalInOut(SONAR_ECHO_PIN)
+    sonar_echo.switch_to_input()  # the divider's 2k pulls it low
 
 
-def sonar_distance_cm():
-    """Read the echo from the last ping. None if there was no usable echo."""
-    sonar_echo.pause()
-    if not len(sonar_echo):
-        return None
-    return sonar_echo[0] / 58  # echo time in us -> cm (there and back)
-
-
-def sonar_ping():
-    # Start listening before triggering so the start of the echo can't be
-    # missed, then give a 20 us trigger pulse (the JSN-SR04T needs >= 10 us;
-    # time.sleep() can't do microseconds).
-    sonar_echo.clear()
-    sonar_echo.resume()
+def sonar_measure():
+    """One reading. Returns (status, cm):
+    "ok"   - echo received, cm is the distance
+    "far"  - echo started but nothing within SONAR_TRIGGER_CM
+    "none" - Echo never went high: the sensor didn't answer
+    "busy" - Echo was still high from the last reading; skipped"""
+    if sonar_echo.value:
+        return "busy", None
     sonar_trig.value = True
     microcontroller.delay_us(20)
     sonar_trig.value = False
+    deadline = time.monotonic_ns() + SONAR_ECHO_START_TIMEOUT_US * 1000
+    while not sonar_echo.value:
+        if time.monotonic_ns() > deadline:
+            return "none", None
+    start = time.monotonic_ns()
+    limit = start + int((SONAR_TRIGGER_CM + 30) * 58 * 1000)  # 58 us per cm
+    while sonar_echo.value:
+        if time.monotonic_ns() > limit:
+            return "far", None
+    return "ok", (time.monotonic_ns() - start) / 58000
 
 
-def check_echo_health(now, cm):
-    """Report the first echo, and warn if the sensor stops answering."""
-    global sonar_seen_echo, last_echo_ms
-    if cm is not None:
+def check_sonar_health(now, status, cm):
+    """Report the first answer, and explain if the sensor stops answering."""
+    global sonar_seen_echo, last_answer_ms, busy_since_ms
+    if status == "busy":
+        if busy_since_ms is None:
+            busy_since_ms = now
+        elif now - busy_since_ms >= ms(SONAR_NO_ECHO_WARN_S):
+            log("Sonar: Echo pin", SONAR_ECHO_PIN, "is stuck HIGH - check the Echo",
+                "wiring and divider (1k in series, 2k from the pin to GND)")
+            busy_since_ms = now
+        return
+    busy_since_ms = None
+    if status in ("ok", "far"):
         if not sonar_seen_echo:
-            log("Sonar OK, first reading {:.0f} cm".format(cm))
+            log("Sonar OK, first reading:",
+                "{:.0f} cm".format(cm) if cm is not None else "nothing within range")
         sonar_seen_echo = True
-        last_echo_ms = now
-    elif now - last_echo_ms >= ms(SONAR_NO_ECHO_WARN_S):
-        log("Sonar: no echo for", SONAR_NO_ECHO_WARN_S,
-            "s - check 5V/GND, Trig on", SONAR_TRIG_PIN, "and Echo (via divider) on",
-            SONAR_ECHO_PIN)
-        last_echo_ms = now  # warn again in another SONAR_NO_ECHO_WARN_S
+        last_answer_ms = now
+    elif now - last_answer_ms >= ms(SONAR_NO_ECHO_WARN_S):
+        log("Sonar: no echo for {} s. Echo never goes high. Check: 5V and GND at the"
+            " sensor; Trig on {}; Echo through 1k to {} with 2k (not 1k) to GND".format(
+                SONAR_NO_ECHO_WARN_S, SONAR_TRIG_PIN, SONAR_ECHO_PIN))
+        last_answer_ms = now
 
 
-def handle_distance(now, cm):
+def handle_distance(now, status, cm):
     global sonar_near, last_motion_ms
-    check_echo_health(now, cm)
-    near = cm is not None and SONAR_MIN_CM <= cm <= SONAR_TRIGGER_CM
+    check_sonar_health(now, status, cm)
+    if status == "busy":
+        return
+    near = status == "ok" and SONAR_MIN_CM <= cm <= SONAR_TRIGGER_CM
     led.value = near
     if SONAR_PRINT_DISTANCE:
-        log("Distance", "none" if cm is None else "{:.0f} cm".format(cm))
+        if status == "ok":
+            log("Distance {:.0f} cm".format(cm))
+        elif status == "far":
+            log("Distance >", SONAR_TRIGGER_CM, "cm")
+        else:
+            log("Distance: no echo")
     if not near:
         if sonar_near:
             log("Sonar clear")
@@ -444,14 +470,12 @@ def handle_distance(now, cm):
 
 
 def update_sonar(now):
-    global sonar_pending, next_ping_ms
+    global next_ping_ms
     if now < next_ping_ms:
         return
-    if sonar_pending:
-        handle_distance(now, sonar_distance_cm())
-    sonar_ping()
-    sonar_pending = True
     next_ping_ms = now + ms(SONAR_PING_S)
+    status, cm = sonar_measure()
+    handle_distance(now, status, cm)
 
 
 def update_sensor(now):
