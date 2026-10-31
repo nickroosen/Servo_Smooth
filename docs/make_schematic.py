@@ -203,7 +203,7 @@ wire([(920, 170), (920, FY)], CSIG)
 wire([(1130, 170), (1130, 390), (1010, 390), (1010, FY)], CSIG)
 
 # Right edge: terminal block (5V, G, +, -) and header pins D5/D6
-for y, label in [(500, "5V"), (540, "G"), (600, "D5"), (640, "D6"), (760, "+"), (800, "−")]:
+for y, label in [(500, "5V"), (540, "G"), (600, "D6"), (640, "D5"), (760, "+"), (800, "−")]:
     pin(FX + FW, y, label, "right")
 text(FX + FW - 8, 487, "terminal block", 11, "end", color=MUTED, italic=True)
 text(FX + 20, FY + FH - 22, "servo header: not used", 11, color=MUTED, italic=True)
@@ -218,7 +218,7 @@ pin(SX, 640, "Echo", "left")
 wire([(FX + FW, 500), (SX, 500)], C5)
 wire([(FX + FW, 540), (SX, 540)], CG)
 wire([(FX + FW, 600), (SX, 600)], CSIG)
-# Echo is 5 V: 1k in series, 2k to ground -> about 3.3 V at D6
+# Echo is 5 V: 1k in series, 2k to ground -> about 3.3 V at D5
 wire([(SX, 640), (1200, 640)], CSIG)
 res_h(1155, 1200, 640, "R1 1 kΩ")
 wire([(1155, 640), (FX + FW, 640)], CSIG)

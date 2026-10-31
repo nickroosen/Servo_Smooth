@@ -114,8 +114,8 @@ converter is connected.
 
   JSN-SR04T 5V   ── terminal "5V"
   JSN-SR04T GND  ── terminal "G"
-  JSN-SR04T Trig ── Feather D5
-  JSN-SR04T Echo ── 1 kΩ ──┬── Feather D6
+  JSN-SR04T Trig ── Feather D6
+  JSN-SR04T Echo ── 1 kΩ ──┬── Feather D5
                            └── 2 kΩ ── GND     (divider: 5 V Echo -> 3.3 V;
                                                 2 kΩ = two 1 kΩ in series)
 
@@ -133,7 +133,7 @@ converter is connected.
   jitter, add the 74AHCT125 level shifter (powered from 5 V).
 - **Don't skip the Echo divider.** The JSN-SR04T's Echo output is 5 V, which can
   damage the Feather's 3.3 V input. The 1 kΩ goes in series and the 2 kΩ to
-  ground, so D6 sees about 3.3 V. No 2 kΩ? Use two 1 kΩ in series, or do the
+  ground, so D5 sees about 3.3 V. No 2 kΩ? Use two 1 kΩ in series, or do the
   whole divider with 10 kΩ + 2 × 10 kΩ. Never 1 kΩ with 10 kΩ to ground
   (that gives about 4.5 V).
 - **One speaker only.** The amp is mono and needs 4–8 Ω. Never wire two 4 Ω
