@@ -19,7 +19,7 @@ wriggles. A sensor wakes it up when someone walks past, and it plays a sound eff
 | [Adafruit RP2040 Prop-Maker Feather](https://www.adafruit.com/product/5768) | Replaces the Uno, Motor Shield and Audio FX board. |
 | 2 × DS3240MG servos, **270° version** | |
 | JSN-SR04T waterproof ultrasonic sensor | Detects people by distance. Not fooled by sun, heat or shadows. Needs 5 V. |
-| 1 kΩ + 2 kΩ resistors | Voltage divider for the sensor's 5 V Echo output (the Feather is 3.3 V). |
+| 3 × 1 kΩ resistors (or 3 × 10 kΩ) | Voltage divider for the sensor's 5 V Echo output (the Feather is 3.3 V): one in series, two in series to ground. |
 | PIR motion sensor (alternative) | Adafruit #189 or an HC-SR501, if you'd rather use one. Prone to false triggers in the sun. |
 | 1 × speaker, 4 Ω or 8 Ω, up to 3 W | Mono amp, one speaker only. |
 | 6 V UBEC, **8 A continuous** | e.g. the Henge/FEICHAO 8A UBEC: 7–25.5 V in, jumper set to **6.0 V**. |
@@ -116,7 +116,8 @@ converter is connected.
   JSN-SR04T GND  ── terminal "G"
   JSN-SR04T Trig ── Feather D5
   JSN-SR04T Echo ── 1 kΩ ──┬── Feather D6
-                           └── 2 kΩ ── GND     (divider: 5 V Echo -> 3.3 V)
+                           └── 2 kΩ ── GND     (divider: 5 V Echo -> 3.3 V;
+                                                2 kΩ = two 1 kΩ in series)
 
   (PIR alternative: VCC "5V", GND "G", OUT "Btn", and set SENSOR = "pir")
 
@@ -132,7 +133,9 @@ converter is connected.
   jitter, add the 74AHCT125 level shifter (powered from 5 V).
 - **Don't skip the Echo divider.** The JSN-SR04T's Echo output is 5 V, which can
   damage the Feather's 3.3 V input. The 1 kΩ goes in series and the 2 kΩ to
-  ground, so D6 sees about 3.3 V.
+  ground, so D6 sees about 3.3 V. No 2 kΩ? Use two 1 kΩ in series, or do the
+  whole divider with 10 kΩ + 2 × 10 kΩ. Never 1 kΩ with 10 kΩ to ground
+  (that gives about 4.5 V).
 - **One speaker only.** The amp is mono and needs 4–8 Ω. Never wire two 4 Ω
   speakers in parallel (2 Ω).
 - The terminal-block 5V output, the amp and the servo header only get power
