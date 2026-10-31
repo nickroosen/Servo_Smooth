@@ -160,6 +160,38 @@ clouds, moving shadows and plants blowing in the wind can all look like a person
 - **Cooldown:** once the bag has settled after a scare, the PIR is ignored for
   `COOLDOWN_S` (30 s).
 
+### Monitoring
+
+**Status LED.** The Feather's built-in RGB LED shows what the bag is doing, so
+you can check it from across the yard:
+
+| Colour | Meaning |
+| --- | --- |
+| Purple | Warming up. The PIR is ignored. |
+| Green | Armed and waiting for motion. |
+| Yellow | The PIR fired once and the code is waiting for a second trigger. A lone yellow flash with nobody around is a false trigger. |
+| Red | Scaring. |
+| Orange | Resting between fits. |
+| Blue | Cooldown after a scare. The PIR is ignored. |
+
+The small red LED next to the USB port mirrors the raw PIR output.
+`STATUS_LED = False` turns the RGB LED off, and `STATUS_BRIGHTNESS` sets how bright it is.
+
+**Serial console.** Every event is printed with the time since power-up:
+
+```
+[0:02:20.0] PIR trigger 1 of 2
+[0:02:24.0] PIR trigger 2 of 2
+[0:02:24.0] Playing /sounds/scream.wav
+[0:02:24.0] -> FIT for 3137 ms
+[0:02:28.0] PIR pulse 8.0 s
+[0:02:36.0] -> RESTING for 8116 ms
+[0:02:44.1] Cooldown 30 s
+[0:02:55.0] PIR trigger ignored (cooldown, 19 s left)
+```
+
+Open it from the web editor (Chrome or Edge: Connect → USB → **Serial**), Mu or Thonny.
+
 ### Mechanical notes
 
 The DS3240MG is roughly 10× as strong as the S3004, so the spine and cables
@@ -244,7 +276,8 @@ All settings are at the top of `code.py`. Saving the file restarts it.
 | `PIR_TRIGGERS_NEEDED`, `PIR_TRIGGER_WINDOW_S`, `PIR_SUSTAIN_S` | False-trigger filter. `PIR_TRIGGERS_NEEDED = 1` turns it off. |
 | `COOLDOWN_S` | How long the PIR is ignored after the bag settles. |
 | `VOLUME` | 0.0–1.0 (default 1.0). For more, see [Louder sound](#louder-sound). |
-| `DEBUG` | Prints state changes to the serial console. |
+| `STATUS_LED`, `STATUS_BRIGHTNESS` | Built-in RGB status LED on/off and brightness. |
+| `DEBUG` | Prints timestamped events to the serial console. |
 
 ## Fixes compared with the 2015 sketch
 

@@ -21,6 +21,7 @@ import audiocore
 import audiomixer
 import board
 import digitalio
+import neopixel_write
 import pwmio
 
 # ---------------------------------------------------------------------------
@@ -80,7 +81,11 @@ SOUND_DIR = "/sounds"
 SAMPLE_RATE = 22050
 VOLUME = 1.0               # 0.0 .. 1.0
 
-DEBUG = True               # print state changes to the serial console
+# Built-in RGB LED shows what the bag is doing (see README.md for colours).
+STATUS_LED = True
+STATUS_BRIGHTNESS = 0.15   # 0.0 .. 1.0
+
+DEBUG = True               # print timestamped events to the serial console
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,9 +106,20 @@ def random_ms(lo_s, hi_s):
     return random.randint(ms(lo_s), ms(hi_s))
 
 
+BOOT_MS = now_ms()
+
+
+def timestamp(now):
+    """Time since start-up as [h:mm:ss.t]."""
+    t = now - BOOT_MS
+    tenths = (t % 1000) // 100
+    secs = t // 1000
+    return "[{}:{:02d}:{:02d}.{}]".format(secs // 3600, secs // 60 % 60, secs % 60, tenths)
+
+
 def log(*args):
     if DEBUG:
-        print(*args)
+        print(timestamp(now_ms()), *args)
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +304,11 @@ def motion_recent(now):
 
 def register_trigger(now):
     global last_motion_ms
-    if state == STARTUP or now < cooldown_until_ms:
+    if state == STARTUP:
+        log("PIR trigger ignored (warm-up)")
+        return
+    if now < cooldown_until_ms:
+        log("PIR trigger ignored (cooldown,", (cooldown_until_ms - now) // 1000, "s left)")
         return
     trigger_times.append(now)
     while trigger_times and now - trigger_times[0] > ms(PIR_TRIGGER_WINDOW_S):
@@ -404,6 +424,52 @@ def run_behaviour(now):
 
 
 # ---------------------------------------------------------------------------
+# Status LED
+# ---------------------------------------------------------------------------
+
+COLOURS = {
+    "warmup": (128, 0, 255),    # purple: PIR warming up, ignored
+    "armed": (0, 255, 0),       # green: waiting for motion
+    "pending": (255, 160, 0),   # yellow: PIR fired, waiting for confirmation
+    "fit": (255, 0, 0),         # red: scaring
+    "resting": (255, 60, 0),    # orange: pause between fits
+    "cooldown": (0, 0, 255),    # blue: PIR ignored after a scare
+}
+
+status_pin = None
+if STATUS_LED:
+    status_pin = digitalio.DigitalInOut(board.NEOPIXEL)
+    status_pin.direction = digitalio.Direction.OUTPUT
+status_shown = None
+
+
+def status_name(now):
+    if state == STARTUP:
+        return "warmup"
+    if state == FIT:
+        return "fit"
+    if state == RESTING:
+        return "resting"
+    if now < cooldown_until_ms:
+        return "cooldown"
+    if trigger_times and now - trigger_times[-1] <= ms(PIR_TRIGGER_WINDOW_S):
+        return "pending"
+    return "armed"
+
+
+def update_status_led(now):
+    global status_shown
+    if status_pin is None:
+        return
+    name = status_name(now)
+    if name == status_shown:
+        return
+    status_shown = name
+    r, g, b = [int(c * STATUS_BRIGHTNESS) for c in COLOURS[name]]
+    neopixel_write.neopixel_write(status_pin, bytearray((g, r, b)))  # GRB order
+
+
+# ---------------------------------------------------------------------------
 # Start-up
 # ---------------------------------------------------------------------------
 
@@ -425,6 +491,7 @@ while True:
     if dt_ms >= ms(UPDATE_S):
         last_update_ms = now
         run_behaviour(now)
+        update_status_led(now)
         dt_s = min(dt_ms, 100) / 1000
         for a in axes:
             a.update(dt_s)
